@@ -7,7 +7,8 @@
 using boost::asio::ip::tcp;
 
 void session(std::shared_ptr<tcp::socket> socket) {
-    auto buffer = std::make_shared<std::vector<char>>(1024); //Буффер для хранения данных клиента
+    // auto buffer = std::make_shared<std::vector<char>>(1024); //Буффер для хранения данных клиента
+    auto buffer = std::make_shared<std::vector<char>>(10); //Буффер для хранения данных клиента
     // Асихронное чтение из сокета
     socket->async_read_some(boost::asio::buffer(*buffer),
         [socket, buffer](const boost::system::error_code& ec, std::size_t length){
