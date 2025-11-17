@@ -1,0 +1,1 @@
+/usr/bin/g++  -Wall -g CMakeFiles/safe_container.dir/src/error_handling/safe_container.cpp.o -o debug/safe_container 

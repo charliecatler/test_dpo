@@ -1,0 +1,1 @@
+/usr/bin/gcc -g CMakeFiles/error_codes_demo.dir/src/error_handling/error_codes.c.o -o debug/error_codes_demo 

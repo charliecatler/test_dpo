@@ -1,0 +1,1 @@
+/usr/bin/g++  -Wall -g CMakeFiles/task1_1.dir/src/task1_1.cpp.o -o debug/task1_1 

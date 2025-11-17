@@ -1,0 +1,32 @@
+[
+{
+  "directory": "/home/dpouser/ocean_maomao/test_dpo/build",
+  "command": "/usr/bin/gcc   -g -o CMakeFiles/error_codes_demo.dir/src/error_handling/error_codes.c.o -c /home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/error_codes.c",
+  "file": "/home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/error_codes.c",
+  "output": "CMakeFiles/error_codes_demo.dir/src/error_handling/error_codes.c.o"
+},
+{
+  "directory": "/home/dpouser/ocean_maomao/test_dpo/build",
+  "command": "/usr/bin/gcc   -g -o CMakeFiles/errno_demo.dir/src/error_handling/errno_demo.c.o -c /home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/errno_demo.c",
+  "file": "/home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/errno_demo.c",
+  "output": "CMakeFiles/errno_demo.dir/src/error_handling/errno_demo.c.o"
+},
+{
+  "directory": "/home/dpouser/ocean_maomao/test_dpo/build",
+  "command": "/usr/bin/g++    -Wall -g -std=gnu++20 -o CMakeFiles/task1_1.dir/src/task1_1.cpp.o -c /home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/task1_1.cpp",
+  "file": "/home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/task1_1.cpp",
+  "output": "CMakeFiles/task1_1.dir/src/task1_1.cpp.o"
+},
+{
+  "directory": "/home/dpouser/ocean_maomao/test_dpo/build",
+  "command": "/usr/bin/g++    -Wall -g -std=gnu++20 -o CMakeFiles/stack_unwinding_demo.dir/src/error_handling/stack_unwinding.cpp.o -c /home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/stack_unwinding.cpp",
+  "file": "/home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/stack_unwinding.cpp",
+  "output": "CMakeFiles/stack_unwinding_demo.dir/src/error_handling/stack_unwinding.cpp.o"
+},
+{
+  "directory": "/home/dpouser/ocean_maomao/test_dpo/build",
+  "command": "/usr/bin/g++    -Wall -g -std=gnu++20 -o CMakeFiles/safe_container.dir/src/error_handling/safe_container.cpp.o -c /home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/safe_container.cpp",
+  "file": "/home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading/src/error_handling/safe_container.cpp",
+  "output": "CMakeFiles/safe_container.dir/src/error_handling/safe_container.cpp.o"
+}
+]

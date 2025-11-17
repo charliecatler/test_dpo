@@ -1,0 +1,96 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.19.0"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "gdb_workshop",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "errno_demo::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-errno_demo-Debug-5cda1cdba2749e3219b3.json",
+					"name" : "errno_demo",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "error_codes_demo::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-error_codes_demo-Debug-d249d175a4e135ab88dc.json",
+					"name" : "error_codes_demo",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "safe_container::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-safe_container-Debug-09298ee58c52c96a7ab4.json",
+					"name" : "safe_container",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "stack_unwinding_demo::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-stack_unwinding_demo-Debug-4c6ae3957b73305ad214.json",
+					"name" : "stack_unwinding_demo",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "task1_1::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-task1_1-Debug-571d50ade514cab0fa24.json",
+					"name" : "task1_1",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/dpouser/ocean_maomao/test_dpo/build",
+		"source" : "/home/dpouser/ocean_maomao/test_dpo/meow/CPP_exceptions_and_multithreading"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 6
+	}
+}

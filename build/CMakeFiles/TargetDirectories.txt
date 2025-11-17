@@ -1,0 +1,7 @@
+/home/dpouser/ocean_maomao/test_dpo/build/CMakeFiles/error_codes_demo.dir
+/home/dpouser/ocean_maomao/test_dpo/build/CMakeFiles/errno_demo.dir
+/home/dpouser/ocean_maomao/test_dpo/build/CMakeFiles/task1_1.dir
+/home/dpouser/ocean_maomao/test_dpo/build/CMakeFiles/stack_unwinding_demo.dir
+/home/dpouser/ocean_maomao/test_dpo/build/CMakeFiles/safe_container.dir
+/home/dpouser/ocean_maomao/test_dpo/build/CMakeFiles/edit_cache.dir
+/home/dpouser/ocean_maomao/test_dpo/build/CMakeFiles/rebuild_cache.dir

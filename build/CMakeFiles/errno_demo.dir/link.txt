@@ -1,0 +1,1 @@
+/usr/bin/gcc -g CMakeFiles/errno_demo.dir/src/error_handling/errno_demo.c.o -o debug/errno_demo  -lm 
