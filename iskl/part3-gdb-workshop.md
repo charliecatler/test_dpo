@@ -1,0 +1,583 @@
+# Часть 3: Мастер-класс по отладке программ с использованием GDB
+
+### 🎯 Цели мастер-класса
+
+- **Освоить специфику отладки C++** по сравнению с отладкой C
+- **Изучить отладку исключений** и stack unwinding механизма
+- **Овладеть многопоточной отладкой** 
+
+---
+
+### Подготовка к работе
+```bash
+# Проверяем версию GDB
+$ gdb --version
+GNU gdb (GDB) 10.2 # Должна быть 8+
+
+# В репозитории переходим на ветку части 3
+$ git checkout part3_debugging
+$ git branch # убеждаемся, что находимся в нужной ветке
+             # в каталоге src появятся файлы task3_<1..4>.cpp            
+
+# Собираем все задания из командной строки
+$ mkdir build
+$ cd build
+$ cmake -DCMAKE_BUILD_TYPE=Debug ..
+$ make -j4
+# (или выполнить сборку в IDE)
+```
+
+#### Напоминание про режимы сборки
+
+- **Debug** 
+
+Для разработки и отладки. Включает полные отладочные символы (`-g`), отсутствуют оптимизации (`-O0`). Размер бинарника большой, скорость выполнения медленная, но легко использовать отладчик (GDB).
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+```
+
+- **Release**
+
+Для финальной продуктовой сборки. Агрессивные оптимизации (`-O2`/`-O3`), отладочные символы удалены. Минимальный размер, максимальная скорость, сложная отладка.
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Release ..
+```
+
+- **RelWithDebInfo**
+
+Компромисс между **Release** и **Debug**. Оптимизации (`-O2`) с сохранением отладочных символов (`-g`). Позволяет отлаживать production-версии без потери производительности.
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+```
+
+- **MinSizeRel**
+
+Для встроенных систем и мобильных приложений. Оптимизация на размер (`-Os`), отладочные символы удалены. Минимальный размер бинарника при хорошей скорости.
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=MinSizeRel ..
+```
+
+##### Рекомендации
+
+- **Во время разработки:** используйте `Debug`
+- **Для тестирования производительности:** используйте `Release`
+- **Для отладки production-проблем:** используйте `RelWithDebInfo`
+- **Для встроенных систем:** используйте `MinSizeRel`
+- **Важно:** перед сменой режима удалите директорию `build` и пересобирайте проект
+
+
+
+<!-- #### **Краткий обзор отличий C++ от C в отладке**
+- **STL контейнеры:** `print vector.size()` работает в GDB
+- **Исключения:** специальные команды `catch throw/catch`
+- **Многопоточность:** `std::thread` вместо `pthread_t`
+- **RAII объекты:** автоматические деструкторы -->
+
+---
+
+### 3.1 Отладка STL контейнеров и базовых ошибок
+
+#### Практическое задание: 
+отладка ошибки выхода за границы массива. 
+Код для отладки ``task3_1.cpp``
+
+**Шаг 1: Запуск под gdb**
+```bash
+$ gdb ./task1
+(gdb) run
+
+# Ожидаемый вывод:
+i       Vec[i]  Arr[i]
+[0]     11      11
+[1]     22      22
+[2]     33      33
+[3]     44      44
+[4]     55      55
+[5]     0       32766 # Мусорное значение или segfault
+```
+
+```
+Мы видим "мусор" в последних элементах STL-вектора и массива. Но в C++ std::vector предоставляет больше информации для отладки. Давайте посмотрим, что GDB может рассказать о векторе.
+```
+
+**Шаг 2: Анализ состояния программы**
+```bash
+# ставим точку останова (breakpoint) перед завершением программы
+(gdb) break task3_1.cpp:24
+# можно посмотреть установленные breakpoints и их статус
+(gdb) info breakpoints
+# удалить точку останова
+# (gdb) delete <N>/all
+# деактивировать точку останова
+# (gdb) disable <N>/all
+
+### запускаем на выполнение ###
+(gdb) run
+# ожидаем такой вывод
+i       Vec[i]  Arr[i]
+[0]     11      11
+[1]     22      22
+[2]     33      33
+[3]     44      44
+[4]     55      55
+[5]     0       32767
+Breakpoint 1, main () at task3_1.cpp:24
+24          return 0;
+
+# посмотрим стек вызовов
+# необходимо, чтобы процесс находился в состоянии остановки (например, на точке останова)
+(gdb) bt
+#0  main () at task3_1.cpp:24
+
+### выведем вектор и массив ###
+(gdb) print numbers_vector
+# ожидаемый вывод информации
+$5 = std::vector of length 5, capacity 5 = {11, 22, 33, 44, 55}
+
+(gdb) print numbers_vector.size()
+# ожидаемый вывод
+$6 = 5
+
+(gdb) print numbers_array
+# ожидаемый вывод
+$7 = {11, 22, 33, 44, 55}
+```
+
+```
+GDB показывает не просто адрес, а содержимое вектора с его length и capacity. Это называется 'pretty printing'.
+```
+
+**Шаг 3: Пошаговая отладка цикла**
+```bash
+# ставим breakpoint на первую строчку в цикле
+(gdb) break task1.cpp:19
+Breakpoint 1 at 0x4011a8: file task3_1.cpp, line 19.
+
+# запускаем программу
+(gdb) run
+(gdb) print i
+$4 = 0
+
+(gdb) continue  # Проходим несколько итераций
+(gdb) print i
+$5 = 1
+
+# Продолжаем до проблемной итерации
+(gdb) continue
+(gdb) continue
+(gdb) continue
+(gdb) continue
+(gdb) print i
+$6 = 4  # Последняя валидная итерация
+# Можно вывести значения элементов вектора и массива
+# (gdb) print numbers_array[i]
+# (gdb) print numbers_vector[i]
+
+(gdb) continue
+(gdb) print i
+$7 = 5  # Проблемная итерация!
+```
+
+**Шаг 4: Условные точки останова с командами**
+```bash
+(gdb) break task3_1.cpp:18
+(gdb) run
+
+# ставим breakpoint на первую строчку в цикле если i>4
+(gdb) break task3_1.cpp:19 if i>4
+(gdb) info breakpoints
+Num     Type           Disp Enb Address            What
+1       breakpoint     keep y   0x0000555555555457 in main() 
+                                                   at task3_1.cpp:18
+        breakpoint already hit 1 time
+2       breakpoint     keep y   0x0000555555555463 in main() 
+                                                   at task3_1.cpp:19
+        stop only if i>4
+
+# задаем команды
+# при попадании на breakpoint 2 выведет значения переменных, затем продолжит выполнение
+(gdb) commands 2
+>print i
+>print numbers_array[i]
+>print numbers_vector[i]
+>print numbers_vector.size()
+>continue
+>end
+
+# продолжаем программу
+(gdb) continue
+
+# ожидаемый вывод
+Continuing.
+[0]     11      11
+[1]     22      22
+[2]     33      33
+[3]     44      44
+[4]     55      55
+
+Breakpoint 2, main () at task3_1.cpp:19
+19              std::cout << "[" << i << "]" << 
+$2 = 5
+$3 = 32767
+$4 = 0
+$5 = 5
+```
+
+**🔧 Исправление и проверка:**
+```cpp
+// Исправленная версия
+for (int i = 0; i < vector_len; i++) {  // Исправлено: <
+```
+
+---
+
+### 3.2 Отладка обработки исключений
+
+#### Практическое задание: 
+Отладка обработки исключений и выявление утечки памяти. Код для отладки ``task3_2.cpp``
+
+**Шаг 1: Настройка перехвата исключений**
+```bash
+$ gdb ./task3_2
+(gdb) catch throw
+Catchpoint 1 (throw)
+
+(gdb) catch catch
+Catchpoint 2 (catch)
+# вывести инфо о catchpoints можно с помощью той же команды, что и для точек останова
+(gdb) info break #короткая команда
+Num     Type           Disp Enb Address            What
+1       catchpoint     keep y                      exception throw
+2       catchpoint     keep y                      exception catch
+#(gdb) info breakpoints
+#Num     Type           Disp Enb Address            What
+#1       catchpoint     keep y                      exception throw
+#2       catchpoint     keep y                      exception catch
+```
+
+```
+catch throw - это специальная команда GDB, которая останавливает выполнение в момент выброса любого исключения, до начала раскрутки стека (stack unwinding).
+
+catch catch - команда GDB, которая ставит точку останова на момент захвата исключения в конструкции try-catch.
+Это означает, что выполнение остановится, когда управление передается в блок catch, то есть после завершения механизма выброса и на этапе обработки исключения в коде.
+```
+
+**Шаг 2: Отлов первого исключения (division by zero)**
+```bash
+(gdb) run
+
+# Вывод программы:
+Creating resource of size 500
+Processing resource...
+
+# GDB останавливается:
+Catchpoint 1 (exception thrown), 0x... in __cxa_throw ()
+
+(gdb) bt
+```
+
+```
+Анализ stack trace: 
+__cxa_throw - это внутренняя функция C++ runtime.
+Стек вызовов показывает: main → dangerous_function → Resource::replace_data → throw
+```
+
+**Шаг 3: Исследование состояния объекта**
+```bash
+(gdb) up 5  # Переходим в dangerous_function
+(gdb) print res
+$1 = (Resource *) 0x555555756280
+(gdb) print *res
+$2 = {data = 0x555555756290, size = 500}
+(gdb) print res->data[0]
+$3 = 0
+(gdb) print res->data[1] 
+$4 = 2
+```
+
+```
+Объект создан (data != nullptr), но после исключения мы делаем return без delete res. Это утечка памяти! В C++ правильное решение -- использовать "умные указатели".
+```
+
+**Шаг 4: Продолжение до второго исключения**
+```bash
+(gdb) continue
+# Остановка в catch блоке
+Catchpoint 2 (exception caught), 0x... in __cxa_begin_catch ()
+
+(gdb) continue
+# Вывод:
+Exception caught: stoi
+Creating resource of size 2000
+
+# Снова останавливается на исключении:
+Catchpoint 1 (exception thrown), 0x... in __cxa_throw ()
+
+(gdb) bt
+#0  0x... in __cxa_throw ()  
+#1  0x... in Resource::Resource(size_t) at task3_2.cpp:20
+#2  0x... in main() at task3_2.cpp:52
+
+(gdb) continue
+# Снова остановка в catch блоке
+Catchpoint 2 (exception caught), 0x... in __cxa_begin_catch ()
+(gdb) continue
+Main caught: Resource too large!
+```
+
+```
+Исключение в конструкторе означает, что объект  не считается 'полностью созданным'. Деструктор НЕ ВЫЗОВЕТСЯ! Но память уже выделена - это гарантированная утечка.
+```
+
+#### 🔧 Задание для самостоятельной работы
+Исправить утечки памяти в коде ``task3_2.cpp``, заменив "сырые" указатели на `std::unique_ptr`
+
+---
+
+### 3.3 Многопоточная отладка
+
+#### Практическое задание 1: 
+Отладка гонки данных (race condition). Код для отладки ``task3_3_races.cpp``
+
+**Шаг 1: Запуск и наблюдение проблемы**
+```bash
+$ gdb ./task3
+(gdb) run
+
+# Возможный вывод (результат может варьироваться):
+Thread 0 starting...
+Thread 1 starting...
+Thread 2 starting...
+Thread 3 starting...
+Thread 1 finished
+Thread 0 finished
+Thread 3 finished
+Thread 2 finished
+Final count: 3847  # Меньше ожидаемого 4000!
+Expected: 4000
+```
+
+```
+Каждый поток должен добавить 1000, итого 4000. Но результат меньше.
+Это классический race condition - операция count++ не атомарна!
+```
+
+**Шаг 2: Анализ потоков во время выполнения**
+```bash
+(gdb) break task3_3_races.cpp:39
+(gdb) run
+
+(gdb) info threads
+# Пример вывода для 4 потоков
+  Id   Target Id         Frame
+* 1    Thread 0x7ffff7fc0740 (LWP 12345) "task3" main () at task3_3_races.cpp:35
+  2    Thread 0x7ffff77bf700 (LWP 12346) "task3" worker () at task3_3_races.cpp:18  
+  3    Thread 0x7ffff6fbe700 (LWP 12347) "task3" Counter::increment() at task3_3_races.cpp:12
+  4    Thread 0x7ffff67bd700 (LWP 12348) "task3" Counter::increment() at task3_3_races.cpp:12
+  5    Thread 0x7ffff5fbc700 (LWP 12349) "task3" worker () at task3_3_races.cpp:19
+```
+
+```
+"* - текущий активный поток (main)
+LWP - Linux Lightweight Process ID
+Frame - где сейчас находится каждый поток
+
+Здесь потоки 3 и 4 находятся в Counter::increment() - 
+они одновременно модифицируют count!"
+```
+
+**Шаг 3: Переключение между потоками**
+```bash
+(gdb) thread 3
+[Switching to thread 3 (Thread 0x7ffff6fbe700 (LWP 12347))]
+
+(gdb) print count
+$1 = 2847
+
+(gdb) print i
+$2 = 654  # Текущая итерация в этом потоке
+
+(gdb) thread 4
+[Switching to thread 4 (Thread 0x7ffff67bd700 (LWP 12348))]
+
+(gdb) print count  
+$3 = 2851  # Другое значение!
+
+(gdb) print i
+$4 = 723
+```
+
+```
+Наблюдаем разные значения count разные в разных потоках.
+Это происходит потому что они читают-модифицируют-записывают
+одновременно.
+```
+
+**Шаг 4: Анализ всех потоков одновременно**
+```bash
+(gdb) thread apply all bt
+
+Thread 5 (Thread 0x7ffff5fbc700 (LWP 12349)):
+#0  worker () at task3_3_races.cpp:19
+#1  ...
+
+Thread 4 (Thread 0x7ffff67bd700 (LWP 12348)):  
+#0  Counter::increment() at task3_3_races.cpp:12
+#1  worker () at task2.cpp:18
+#2  ...
+
+Thread 3 (Thread 0x7ffff6fbe700 (LWP 12347)):
+#0  Counter::increment() at task3_3_races.cpp:12  
+#1  worker () at task3_3_races.cpp:18
+#2  ...
+```
+
+#### 🔧 Задание для самостоятельной работы
+Исключить гонку данный в коде ``task3_3_races.cpp``, добавив примитивы синхронизации: ``std::mutex`` и ``std::lock_guard``
+
+#### Практическое задание 2: 
+Отладка взаимоблокировки (deadlock). Код для отладки ``task3_3_deadlock.cpp``
+
+
+**Шаг 1: Запуск с timeout (программа зависнет)**
+```bash
+$ timeout 10s gdb ./task4
+(gdb) run &
+
+# Программа начнет выполняться и "зависнет"
+Account 1 transferring 50 to account 2
+Account 2 transferring 30 to account 1
+# ... тишина
+```
+
+**Шаг 2: Прерывание и анализ**
+```bash
+# Нажимаем Ctrl+C в GDB
+^C
+Program received signal SIGINT, Interrupt.
+
+(gdb) info threads
+  Id   Target Id         Frame
+* 1    Thread 0x7ffff7fc0740 (LWP 12345) "task4" main () at task4.cpp:48
+  2    Thread 0x7ffff77bf700 (LWP 12346) "task4" 0x... in __lll_lock_wait ()
+  3    Thread 0x7ffff6fbe700 (LWP 12347) "task4" 0x... in __lll_lock_wait ()
+```
+
+
+```
+Признаки deadlock:
+Потоки 2 и 3 находятся в __lll_lock_wait()/futex_wait(...) - они ждут освобождения мьютексов.
+Это низкоуровневая функция блокировки. Классический признак deadlock!
+```
+
+**Шаг 3: Детальный анализ каждого потока**
+```bash
+(gdb) thread 2
+[Switching to thread 2 (Thread 0x7ffff77bf700 (LWP 12346))]
+
+(gdb) bt
+#0  __lll_lock_wait () at lowlevellock.S:135
+#1  0x... in std::mutex::lock()
+#2  0x... in std::lock_guard<std::mutex>::lock_guard()
+#3  0x... in BankAccount::transfer_to() at task4.cpp:22  
+#4  0x... in transfer_worker() at task4.cpp:41
+
+(gdb) up 7  # Переходим в transfer_to
+(gdb) print this->id
+$1 = 1  # Аккаунт 1 пытается перевести
+
+(gdb) print &other  
+$2 = (BankAccount *) 0x7fffffffe050
+
+(gdb) thread 3
+(gdb) bt
+#0  __lll_lock_wait () at lowlevellock.S:135
+#1  0x... in std::mutex::lock()
+#2  0x... in std::lock_guard<std::mutex>::lock_guard() 
+#3  0x... in BankAccount::transfer_to() at task4.cpp:22
+#4  0x... in transfer_worker() at task4.cpp:41
+
+(gdb) up 7
+(gdb) print this->id
+$3 = 2  # Аккаунт 2 пытается перевести
+
+(gdb) print &other
+$4 = (BankAccount *) 0x7fffffffe040
+```
+
+```
+Анализ взаимоблокировки:
+Поток 1: держит mutex аккаунта 1, ждет mutex аккаунта 2
+Поток 2: держит mutex аккаунта 2, ждет mutex аккаунта 1
+Классический взаимный deadlock!
+```
+
+
+#### 🔧 Задание для самостоятельной работы
+Исключить взаимоблокировку``task3_3_deadlock.cpp``, использовав одновременную блокировку мьютексов с помощью  ``std::lock()`` или ``std::scoped_lock()``
+
+---
+
+<!-- 
+### **Автоматизация и полезные настройки**
+
+**Создание макросов для многопоточной отладки:**
+```bash
+(gdb) define threads-info
+> info threads
+> thread apply all bt
+> end
+
+(gdb) threads-info
+# Теперь одной командой получаем полную информацию
+```
+
+**Полезные conditional breakpoints:**
+```bash
+# Остановиться только при определенном значении
+(gdb) break task2.cpp:12 if count > 3000
+
+# Для многопоточности - остановиться в определенном потоке
+(gdb) break BankAccount::transfer_to if id == 1
+```
+
+**Настройка .gdbinit для C++:**
+```bash
+# ~/.gdbinit
+set print pretty on
+set print array on  
+set print object on
+set confirm off
+
+# Макросы для C++ отладки
+define print-stl-string
+  printf "%s\n", $arg0.c_str()
+end
+
+define print-vector-info
+  printf "size=%d, capacity=%d\n", $arg0.size(), $arg0.capacity()
+end
+```
+---
+ -->
+
+## Практические результаты мастер-класса
+
+### **Выявлены и решенны проблемы:**
+
+1. **Buffer overflow в std::vector** → исправлено условие цикла
+2. **Memory leak при исключениях** → заменён raw pointer на `std::unique_ptr`
+3. **Race condition** → добавлен `std::mutex` с `std::lock_guard`  
+4. **Deadlock** → использованы `std::lock()` или `std::scoped_lock()` для одновременной блокировки
+
+<!-- ### **Освоенные техники:**
+- **STL debugging:** `print vector.size()`, pretty printing
+- **Exception debugging:** `catch throw/catch`, анализ stack unwinding
+- **Multithreading:** `info threads`, `thread apply all bt`
+- **Deadlock detection:** анализ `__lll_lock_wait()` состояний -->
+
+---

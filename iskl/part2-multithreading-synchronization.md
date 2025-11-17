@@ -1,0 +1,766 @@
+# Часть 2: Многопоточность и примитивы синхронизации в С++
+
+## 🎯 Цели части 2
+- **Основы работы с потоками в С++** 
+- **Примитивы синхронизации** от базовых до современных
+- **Высокоуровневыми подходы к управлению потоками**
+---
+
+## 2.1 Потоки: от pthread к std::thread
+
+**Поток (thread)** – независимый путь выполнения внутри процесса, минимальная единица планирования операционной системы (ОС). Все потоки одного процесса разделяют память и ресурсы. Потоки позволяют выполнять задачи параллельно, но из-за разделяемых рескрсов есть риск **гонок данных**.
+
+**Ключевые характеристики:**
+- **Общее адресное пространство** - все потоки процесса видят одну память
+- **Собственный стек** - каждый поток имеет свой стек вызовов
+- **Общие глобальные переменные** - источник потенциальных проблем
+- **Переключение контекста** - ОС управляет выполнением потоков
+
+##### **Многопоточность в С-стиле: ограничения pthread API**
+```c
+// pthread код
+#include <pthread.h>
+
+struct ThreadData {
+    int start;
+    int end;
+    double* result;
+};
+
+void* worker_thread(void* arg) {
+    ThreadData* data = (ThreadData*)arg;  // Небезопасное приведение типов
+    
+    // Работа...
+    data->result = calculate(data->start, data->end);
+    
+    return NULL;  // Потеря информации о результате
+}
+
+int main() {
+    pthread_t threads[4];
+    ThreadData thread_data[4];
+    
+    // Создание потоков
+    for (int i = 0; i < 4; i++) {
+        thread_data[i] = {i * 1000, (i + 1) * 1000, nullptr};
+        pthread_create(&threads[i], NULL, worker_thread, &thread_data[i]);
+    }
+    
+    // Ожидание завершения
+    for (int i = 0; i < 4; i++) {
+        pthread_join(threads[i], NULL);
+    }
+}
+```
+
+**Проблемы pthread:**
+- **Небезопасность типов:** `void*` параметры
+- **Ручное управление памятью:** нет автоматической очистки
+- **Отсутствие исключений:** только коды ошибок
+- **Платформозависимость**
+
+#### **Потоки в С++**
+**std::thread** – базовый механизм запуска параллельных потоков в C++ (с версии C++11). Позволяет запускать функции, классы, лямбда-выражения в отдельных потоках.
+
+##### **Основные способы создания потока**
+```cpp
+#include <thread>
+#include <iostream>
+
+// 1. Обычная функция
+void hello() {
+    std::cout << "Hello from thread!" << std::endl;
+}
+
+// 2. Функция с параметрами
+void print_number(int n) {
+    std::cout << "Number: " << n << std::endl;
+}
+
+// 3. Класс с operator()
+class Callable {
+public:
+    void operator()() {
+        std::cout << "Called from class!" << std::endl;
+    }
+};
+
+int main() {
+    // Способы создания потоков
+    std::thread t1(hello);                          // функция
+    std::thread t2(print_number, 42);              // функция с параметром
+    std::thread t3(Callable{});                    // функтор
+    std::thread t4([]{                              // лямбда
+        std::cout << "Lambda thread!" << std::endl;
+    });
+    
+    // Обязательно присоединяем или отсоединяем
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+    
+    return 0;
+}
+```
+
+##### **Управление жизненным циклом:**
+```cpp
+std::thread t(worker_function);
+
+// Варианты завершения:
+if (t.joinable()) {
+    t.join();    // Ждать завершения потока
+    // или
+    t.detach();  // Отсоединить поток (daemon thread)
+}
+
+// ОШИБКА: забыть join() или detach() → std::terminate
+```
+
+##### **✅ Преимущества std::thread**
+- **Type safety:** компилятор проверяет типы параметров
+- **RAII:** автоматическое управление ресурсами
+- **Exception safety:** исключения корректно передаются
+- **Портабельность:** одинаковое поведение на всех платформах
+
+##### **⚠️ Проблемы std::thread:**
+1. **Забытый join()** - вызывает std::terminate
+2. **Передача ссылок** - требует std::ref()
+3. **Исключения** - могут прервать join()
+
+#### std::jthread (C++20) - Улучшенная альтернатива
+
+**std::jthread** (joining thread) – усовершенствованная версия std::thread, решающая основные проблемы безопасности и удобства использования.
+
+**✅Ключевые преимущества:**
+##### 1. **Автоматическое присоединение (Auto-joining)**
+```cpp
+void safe_example() {
+    std::jthread jt([]{ 
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::cout << "Task completed" << std::endl;
+    });
+    
+    // Автоматически вызывается join() в деструкторе
+    // Никаких проблем с забытым join()!
+}
+```
+
+##### 2. **Встроенная поддержка отмены через std::stop_token**
+```cpp
+#include <thread>
+#include <stop_token>
+
+void cancellable_task(std::stop_token stoken) {
+    int counter = 0;
+    while (!stoken.stop_requested()) {
+        std::cout << "Working... " << ++counter << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        
+        if (counter > 10) break;  // Дополнительное условие выхода
+    }
+    std::cout << "Task finished gracefully" << std::endl;
+}
+
+void example_with_cancellation() {
+    std::jthread jt(cancellable_task);
+    
+    // Даем поработать 2 секунды
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // Запрашиваем остановку
+    jt.request_stop();
+    
+    // jt автоматически присоединится в деструкторе
+}
+```
+
+##### 3. **Улучшенная RAII совместимость**
+```cpp
+class BackgroundWorker {
+    std::jthread worker_;
+    
+public:
+    BackgroundWorker() : worker_(&BackgroundWorker::work, this) {}
+    
+    void stop() {
+        worker_.request_stop();
+    }
+    
+    // Деструктор становится тривиальным
+    ~BackgroundWorker() = default;
+    
+private:
+    void work(std::stop_token token) {
+        while (!token.stop_requested()) {
+            // Выполняем работу...
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+};
+```
+
+#### **Сравнение std::thread vs std::jthread:**
+
+| **Характеристика**               | **std::thread**                       | **std::jthread**                 |
+| -------------------------------- | ------------------------------------- | -------------------------------- |
+| **Стандарт C++**                 | C++11                                 | C++20                            |
+| **Автоматическое присоединение** | ❌ Требует явный join()/detach()       | ✅ Автоматически в деструкторе    |
+| **Поведение при забытом join()** | 💥 std::terminate                     | ✅ Безопасное завершение          |
+| **Встроенная отмена**            | ❌ Только через пользовательские флаги | ✅ std::stop_token                |
+| **RAII совместимость**           | ⚠️ Требует осторожности               | ✅ Естественная интеграция        |
+| **Размер объекта**               | ~8 байт                               | ~16 байт                         |
+| **Производительность**           | Минимальные накладные расходы         | Небольшие дополнительные расходы |
+
+---
+
+## 2.2: Примитивы синхронизации в С++
+
+**Гонка данных (Data Race)** – ситуация, когда два или более потока одновременно обращаются к одной переменной (разделяемому ресурсу), и хотя бы один из них производит запись.
+
+**Инкремент: что происходит на ассемблерном уровне**
+```
+++global_counter эквивалентно:
+1. mov eax, [global_counter]  ; загрузить значение
+2. inc eax                    ; увеличить
+3. mov [global_counter], eax  ; сохранить
+
+Поток может быть прерван между любыми инструкциями!
+```
+
+**Атомарные операции** -- неделимые операции. Выполняются полностью или не выполняются совсем, частичное выполнение невозможно.
+
+**std::atomic** – шаблон класса, обеспечивающий атомарные операции над базовыми типами без использования блокировок.
+
+**Основные атомарные операции в С++:**
+```cpp
+std::atomic<int> atomic_int{0};
+
+// Загрузка значения
+int value = atomic_int.load();
+
+// Сохранение значения
+atomic_int.store(42);
+
+// Обмен значения
+int old_value = atomic_int.exchange(new_value);
+
+// Compare-and-swap
+int expected = 10;
+bool success = atomic_int.compare_exchange_weak(expected, 20);
+
+// Арифметические операции
+atomic_int.fetch_add(5);      // возвращает старое значение
+atomic_int.fetch_sub(3);
+atomic_int += 2;              // возвращает новое значение
+++atomic_int;
+```
+Атомарные операции тема глубокая и здесь мы касаемся её поверхностно. 
+На моделях памяти мы не будем подробно останавливаться.
+
+**Потокобезопасность (Thread Safety)**
+Свойство кода корректно работать при одновременном доступе из нескольких потоков без гонок данных и нарушения инвариантов.
+**Уровни thread safety:**
+1. **Thread-unsafe** - требует внешней синхронизации
+2. **Thread-compatible** - безопасен при чтении, требует синхронизации при записи
+3. **Thread-safe** - полностью безопасен для одновременного использования
+
+**Критическая секция (Critical Section)**
+Участок кода, в котором происходит обращение к разделяемым ресурсам и должен выполняться атомарно относительно других потоков (т.е. в критической секции может находиться только один поток).
+
+### **Взаимное исключение (mutual exclusion)**
+**Мьютекс** –примитив синхронизации, позволяющий обеспечить эксклюзивный доступ к ресурсу. Один поток захватывает мьютекс, остальные ждут. Только один поток в критической секции (между lock и unlock).
+⚠️ Использование мьютекса ведет к сериализации. Ментальная модель мьютекса -- **очередь**.
+#####  **От pthread_mutex к std::mutex**
+```c
+// pthread подход
+pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+int shared_resource = 0;
+
+void* worker(void* arg) {
+    pthread_mutex_lock(&mtx);
+    shared_resource++;  // Что если здесь исключение?
+    pthread_mutex_unlock(&mtx);  // Может не выполниться!
+    return NULL;
+}
+```
+
+```cpp
+// C++ подход с RAII
+std::mutex mtx;
+int shared_resource = 0;
+
+void worker() {
+    std::lock_guard<std::mutex> lock(mtx);  // RAII
+    shared_resource++;  // Исключение безопасно!
+    // Автоматический unlock при выходе из области видимости
+}
+```
+
+
+**std::mutex** – базовый примитив синхронизации, обеспечивающий взаимное исключение (mutual exclusion). Только один поток может владеть мьютексом в данный момент времени.
+
+**Типы мьютексов:**
+- **std::mutex** - обычный мьютекс
+- **std::recursive_mutex** - можно блокировать несколько раз из одного потока
+- **std::timed_mutex** - поддержка timeout при блокировке
+- **std::shared_mutex** - разделяемый на чтение и запись мьютекс (поддерживает несколько читателей), read-write lock (C++17).  Позволяет множественным потокам одновременно читать данные, но эксклюзивный доступ для записи.
+
+**RAII обертки для мьютексов:** хорошая практика
+```cpp
+std::mutex mtx;
+
+// 1. std::lock_guard - простая RAII блокировка
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    // критическая секция
+    // автоматическое освобождение при выходе из области видимости
+}
+
+// 2. std::unique_lock - гибкая блокировка
+{
+    std::unique_lock<std::mutex> lock(mtx);
+    // можно unlock() и lock() снова
+    lock.unlock();
+    // некритическая работа
+    lock.lock();
+    // снова критическая секция
+}
+
+// 3. std::scoped_lock - блокировка нескольких мьютексов (C++17)
+std::mutex mtx1, mtx2;
+{
+    std::scoped_lock lock(mtx1, mtx2);  // блокирует оба без deadlock
+    // работа с ресурсами, защищенными обоими мьютексами
+}
+```
+- **`std::lock_guard`:** простая RAII обёртка
+- **`std::unique_lock`:** гибкая блокировка, разрешает множественное блокирование и разблокирование мьютексов.
+- **`std::scoped_lock` (C++17):** для множественных мьютексов. Позволяют заблокировать несколько мьютексов и избежать взаимной блокировки (deadlock)/
+- **`std::shared_lock` (C++14):** для readers-writers
+
+### **Условные переменные (conditional variable)**
+
+**std::condition_variable** – механизм для ожидания определенного условия. Позволяет потоку заблокироваться до наступления события и быть уведомленным другим потоком.
+
+**Методы condition_variable:**
+- `wait(lock)` - ждать уведомления
+- `wait(lock, predicate)` - ждать пока предикат не станет true
+- `wait_for(lock, duration)` - ждать с таймаутом
+- `notify_one()` - уведомить один поток
+- `notify_all()` - уведомить все потоки
+
+Условные переменные используются вместе с мьютексом, ассоциированы с каким-либо условием (например для примера это проверка что очередь не пуста). 
+Рассмотрим ожидание -- много раз захватывается и освобождается мьютекс (нужно использовать unique_lock). Последовательность операций
+1. захватывается мьютекс
+2. проверяется условие
+3. если условие не выполнилось, то мьютекс освобождается, поток переходит в ожидание
+4. приходит уведомление -- просыпается поток, захватывает мьютекс проверяет условие
+и если оно не выполнилось возвращаемся на 3
+Замечание, про спонтанные пробуждения (ОС будит поток) и проверку условия без побочных эффектов, т.к. проверка условия может непредсказуемое количество раз выполниться.
+
+```cpp
+#include <condition_variable>
+#include <mutex>
+#include <queue>
+#include <thread>
+
+template<typename T>
+class ThreadSafeQueue {
+    std::queue<T> queue_;
+    std::mutex mutex_;
+    std::condition_variable condition_;
+    
+public:
+    void push(T item) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        queue_.push(item);
+        condition_.notify_one();  // Уведомляем один ждущий поток
+    }
+    
+    T pop() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        
+        // Ждем, пока очередь не станет непустой
+        condition_.wait(lock, [this] { return !queue_.empty(); });
+        
+        T result = queue_.front();
+        queue_.pop();
+        return result;
+    }
+    
+    bool empty() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return queue_.empty();
+    }
+};
+
+```
+
+### **Семафор**
+
+**std::counting_semaphore** (С++20) – обобщение мьютекса, позволяющее контролировать доступ к ограниченному количеству ресурсов.
+
+### **Барьеры**
+
+std::latch и std::barrier (C++20)
+
+**std::latch** - одноразовый барьер, позволяющий потокам ждать пока счетчик не достигнет нуля.
+
+```cpp
+#include <latch>
+#include <thread>
+#include <vector>
+
+void worker_with_latch(std::latch& done_latch, int worker_id) {
+    // Выполняем работу
+    std::cout << "Worker " << worker_id << " working..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(1 + worker_id % 3));
+    
+    std::cout << "Worker " << worker_id << " done" << std::endl;
+    
+    // Сообщаем о завершении
+    done_latch.count_down();
+}
+
+int main() {
+    const int num_workers = 5;
+    std::latch all_done(num_workers);  // Счетчик на 5
+    
+    std::vector<std::thread> workers;
+    for (int i = 0; i < num_workers; ++i) {
+        workers.emplace_back(worker_with_latch, std::ref(all_done), i);
+    }
+    
+    // Ждем завершения всех потоков
+    all_done.wait();
+    std::cout << "All workers completed!" << std::endl;
+    
+    for (auto& worker : workers) {
+        worker.join();
+    }
+    
+    return 0;
+}
+```
+
+**std::barrier** - многоразовый барьер для синхронизации потоков по фазам.
+
+```cpp
+#include <barrier>
+#include <thread>
+
+void phase_worker(std::barrier<>& sync_point, int worker_id) {
+    for (int phase = 0; phase < 3; ++phase) {
+        // Работаем в текущей фазе
+        std::cout << "Worker " << worker_id << " phase " << phase << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500 + worker_id * 100));
+        
+        // Ждем остальных потоков
+        sync_point.arrive_and_wait();
+        
+        std::cout << "Worker " << worker_id << " finished phase " << phase << std::endl;
+    }
+}
+
+int main() {
+    const int num_workers = 4;
+    std::barrier sync_point(num_workers);
+    
+    std::vector<std::thread> workers;
+    for (int i = 0; i < num_workers; ++i) {
+        workers.emplace_back(phase_worker, std::ref(sync_point), i);
+    }
+    
+    for (auto& worker : workers) {
+        worker.join();
+    }
+    
+    return 0;
+}
+```
+
+
+---
+
+
+## 2.3: Высокоуровневые абстракции многопоточности в C++
+
+Высокоуровневые абстракции в C++ предоставляют программистам инструменты для работы с многопоточностью без необходимости вручную управлять потоками. Эти механизмы позволяют сосредоточиться на логике приложения, а не на деталях синхронизации.
+
+### std::async и std::future
+
+**std::async** - это высокоуровневая функция, которая позволяет запускать задачи асинхронно, автоматически управляя созданием потоков и возвращая **std::future** для получения результата.
+
+### ✅Основные преимущества std::async
+
+1. **Автоматическое управление потоками** - не нужно создавать std::thread вручную
+2. **Простая передача результатов** - через std::future
+3. **Гибкие политики запуска** - sync/deferred/auto
+4. **Exception-safe** - исключения передаются через future
+
+### Политики запуска std::launch
+
+```cpp
+#include <future>
+#include <iostream>
+
+int expensive_computation(int n) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    return n * n;
+}
+
+int main() {
+    // 1. Автоматическая политика (по умолчанию)
+    auto future1 = std::async(expensive_computation, 5);
+    
+    // 2. Асинхронный запуск (гарантированно в новом потоке)
+    auto future2 = std::async(std::launch::async, expensive_computation, 10);
+    
+    // 3. Отложенный запуск (выполняется при вызове get())
+    auto future3 = std::async(std::launch::deferred, expensive_computation, 15);
+    
+    // 4. Комбинированная политика
+    auto future4 = std::async(std::launch::async | std::launch::deferred, 
+                             expensive_computation, 20);
+    
+    // Получение результатов
+    std::cout << "Result 1: " << future1.get() << std::endl; // 25
+    std::cout << "Result 2: " << future2.get() << std::endl; // 100
+    std::cout << "Result 3: " << future3.get() << std::endl; // 225 (выполняется здесь)
+    std::cout << "Result 4: " << future4.get() << std::endl; // 400
+    
+    return 0;
+}
+```
+
+### Cравнение политик запуска
+
+|**Политика**|**Поведение**|**Когда использовать**|**Производительность**|
+|---|---|---|---|
+|**std::launch::async**|Гарантированно создает новый поток|Когда нужна истинная параллельность|Высокие накладные расходы на создание потока|
+|**std::launch::deferred**|Выполняется синхронно при get()|Когда результат может не понадобиться|Минимальные накладные расходы|
+|**auto (default)**|Реализация выбирает|Большинство случаев|Балансирует производительность и гибкость|
+
+### std::future - интерфейс для получения результатов
+
+**std::future** предоставляет механизм для получения результата асинхронной операции
+
+```cpp
+#include <future>
+#include <vector>
+#include <numeric>
+
+// Функция для параллельного суммирования массива
+std::future<long long> async_sum(const std::vector<int>& data, 
+                                size_t start, size_t end) {
+    return std::async(std::launch::async, [&data, start, end]() {
+        return std::accumulate(data.begin() + start, 
+                              data.begin() + end, 0LL);
+    });
+}
+
+int main() {
+    std::vector<int> numbers(1000000);
+    std::iota(numbers.begin(), numbers.end(), 1); // Заполнение 1, 2, 3, ...
+    
+    const size_t num_threads = 4;
+    const size_t chunk_size = numbers.size() / num_threads;
+    
+    std::vector<std::future<long long>> futures;
+    
+    // Создаем асинхронные задачи
+    for (size_t i = 0; i < num_threads; ++i) {
+        size_t start = i * chunk_size;
+        size_t end = (i == num_threads - 1) ? numbers.size() : (i + 1) * chunk_size;
+        
+        futures.push_back(async_sum(numbers, start, end));
+    }
+    
+    // Собираем результаты
+    long long total_sum = 0;
+    for (auto& future : futures) {
+        total_sum += future.get(); // Блокирующий вызов
+    }
+    
+    std::cout << "Total sum: " << total_sum << std::endl;
+    
+    return 0;
+}
+
+```
+
+#### Методы std::future
+
+```cpp
+std::future<int> future = std::async(std::launch::async, []() {
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    return 42;
+});
+
+// Проверка готовности результата
+if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    std::cout << "Result is ready!" << std::endl;
+} else {
+    std::cout << "Still computing..." << std::endl;
+}
+
+// Ожидание с таймаутом
+auto status = future.wait_for(std::chrono::seconds(1));
+switch (status) {
+    case std::future_status::ready:
+        std::cout << "Ready: " << future.get() << std::endl;
+        break;
+    case std::future_status::timeout:
+        std::cout << "Timeout occurred" << std::endl;
+        break;
+    case std::future_status::deferred:
+        std::cout << "Task is deferred" << std::endl;
+        break;
+}
+```
+### std::promise - ручная установка значений
+
+**std::promise** позволяет вручную установить значение, которое будет получено через соответствующий std::future:
+
+```cpp
+#include <future>
+#include <thread>
+
+void producer(std::promise<std::string> promise) {
+    // Имитация сложной работы
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // Устанавливаем результат
+    promise.set_value("Hello from producer!");
+}
+
+void consumer() {
+    std::promise<std::string> promise;
+    std::future<std::string> future = promise.get_future();
+    
+    // Запускаем производителя
+    std::thread producer_thread(producer, std::move(promise));
+    
+    // Потребитель может делать другую работу
+    std::cout << "Consumer waiting for result..." << std::endl;
+    
+    // Получаем результат (блокируется до готовности)
+    std::string result = future.get();
+    std::cout << "Received: " << result << std::endl;
+    
+    producer_thread.join();
+}
+
+```
+### Обработка исключений с std::promise/std::future
+
+```cpp
+void risky_producer(std::promise<int> promise) {
+    try {
+        // Имитация работы, которая может выбросить исключение
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        if (rand() % 2 == 0) {
+            throw std::runtime_error("Something went wrong!");
+        }
+        
+        promise.set_value(42);
+    } catch (...) {
+        // Передаем исключение через promise
+        promise.set_exception(std::current_exception());
+    }
+}
+
+int main() {
+    std::promise<int> promise;
+    std::future<int> future = promise.get_future();
+    
+    std::thread t(risky_producer, std::move(promise));
+    
+    try {
+        int result = future.get(); // Может выбросить исключение
+        std::cout << "Success: " << result << std::endl;
+    } catch (const std::exception& e) {
+        std::cout << "Exception caught: " << e.what() << std::endl;
+    }
+    
+    t.join();
+    return 0;
+}
+
+```
+
+### Практический пример: пул задач с std::async
+
+```cpp
+#include <future>
+#include <vector>
+#include <functional>
+
+class TaskPool {
+    std::vector<std::future<void>> futures_;
+    
+public:
+    template<typename Func, typename... Args>
+    auto submit(Func&& func, Args&&... args) 
+        -> std::future<std::invoke_result_t<Func, Args...>> {
+        
+        using return_type = std::invoke_result_t<Func, Args...>;
+        
+        auto task = std::make_shared<std::packaged_task<return_type()>>(
+            std::bind(std::forward<Func>(func), std::forward<Args>(args)...)
+        );
+        
+        std::future<return_type> result = task->get_future();
+        
+        futures_.push_back(
+            std::async(std::launch::async, [task]() { (*task)(); })
+        );
+        
+        return result;
+    }
+    
+    void wait_all() {
+        for (auto& future : futures_) {
+            future.wait();
+        }
+        futures_.clear();
+    }
+};
+
+// Использование
+int main() {
+    TaskPool pool;
+    
+    // Отправляем задачи
+    auto result1 = pool.submit([](int x) { return x * x; }, 5);
+    auto result2 = pool.submit([](int a, int b) { return a + b; }, 10, 20);
+    auto result3 = pool.submit([]() { 
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        return "Task completed";
+    });
+    
+    // Получаем результаты
+    std::cout << "Result 1: " << result1.get() << std::endl; // 25
+    std::cout << "Result 2: " << result2.get() << std::endl; // 30
+    std::cout << "Result 3: " << result3.get() << std::endl; // "Task completed"
+    
+    pool.wait_all();
+    
+    return 0;
+}
+```
+
+
+---
+
+## 📚 Материалы и ресурсы
+
+1. **Anthony Williams** - "C++ Concurrency in Action" (2nd Edition)
+2. **cppreference.com** - threading и atomic библиотеки
+
+
+
+---
